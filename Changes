@@ -1,0 +1,6 @@
+Revision history for Perl extension POE::Component::Client::Stomp.
+
+0.01  Thu Aug 30 13:48:39 2007
+	- original version; created by h2xs 1.23 with options
+		-Axc -n POE::Component::Client::Stomp
+

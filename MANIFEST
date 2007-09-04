@@ -1,0 +1,7 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/POE-Component-Client-Stomp.t
+lib/POE/Component/Client/Stomp.pm
+META.yml                                 Module meta-data (added by MakeMaker)
