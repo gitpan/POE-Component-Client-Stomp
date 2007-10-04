@@ -1,7 +1,7 @@
-POE-Component-Client-Stomp version 0.01
+POE-Component-Client-Stomp version 0.02
 =======================================
 
-This module is a wrapper around POE::Component::Client::TCP. It provides
+This module is a object wrapper around Stomp client. It provides
 support for programs that want to communicate with a Stomp server such as
 POE::Component::Server::MessageQueue or ActiveMQ from the Apache Foundation.
 
@@ -19,7 +19,7 @@ DEPENDENCIES
 This module requires these other modules and libraries:
 
   POE::Filter::Stomp
-  POE::Component::Client::TCP
+  POE::Component::Client::Stomp::Utils
 
 COPYRIGHT AND LICENCE
 
