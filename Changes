@@ -9,3 +9,16 @@ Revision history for Perl extension POE::Component::Client::Stomp.
 	  sub classing the module to reduce complexity. I also wanted a dispatcher
 	  based on message types. This version does those things.
 	  
+0.03  Tue Oct 09 15:10:00 2007
+    - Changed event/method "handle_send" to "send_data", it seemed more
+	    syntactically correct with the new "gather_data" event/method.
+	  Added accessors for stomp, config, host and port.
+	  Added a log method, this method currently knows "warn" and "error"
+	    levels. This should be overridden by your class, for your prefered
+		logger.
+	  Added a event/method "gather_data", it was needed to send the
+	    object to the method.
+	  Changed the internals to use the new accessors.
+	  Added a couple of examples.
+	  Made the reconnection code more robust. Probably needs more work.
+	  

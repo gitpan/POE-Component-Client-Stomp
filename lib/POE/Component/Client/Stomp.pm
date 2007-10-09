@@ -15,7 +15,7 @@ use warnings;
 use constant DEFAULT_HOST => 'localhost';
 use constant DEFAULT_PORT => 61613;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 # ---------------------------------------------------------------------
 
@@ -31,7 +31,7 @@ sub spawn {
 
     $self->{CONFIG} = \%args;
     $self->{stomp} = POE::Component::Client::Stomp::Utils->new();
-    $self->{attempts} = 0;
+    $self->{attempts} = 1;
 
     POE::Session->create(
         object_states => [
@@ -42,9 +42,10 @@ sub spawn {
                 reconnect => '_client_start',
             },
             $self => [ qw( _server_connected _server_connection_failed
-                           _server_error _server_message handle_send
+                           _server_error _server_message send_data
                            handle_message handle_receipt handle_error
-                           handle_connected handle_connection) ],
+                           handle_connected handle_connection
+			               gather_data) ],
         ],
         (ref $args{options} eq 'HASH' ? (options => $args{options}) : () ),
     );
@@ -94,9 +95,9 @@ sub _server_connected {
     my $host = gethostbyaddr($peeraddr, AF_INET);
 
     $self->{attempts} = 0;
-    $self->{Server}->{Wheel} = $wheel;
-    $self->{Server}->{peeraddr} = $host;
-    $self->{Server}->{peerport} = $peerport;
+    $self->{Wheel} = $wheel;
+    $self->{Host} = $host;
+    $self->{Port} = $peerport;
 
     $kernel->yield('handle_connection');
 
@@ -106,17 +107,24 @@ sub _server_connection_failed {
     my ($kernel, $self, $operation, $errnum, $errstr, $wheel_id) = 
         @_[KERNEL, OBJECT, ARG0 .. ARG3];
 
+	$self->log($kernel, 'error', "Operation: $operation; Reason: $errnum - $errstr");
+
     if ($errnum == 111) {
 
         if ($self->{attempts} < 10) {
-            
+
+			$self->log($kernel, 'warn', "Attempting connect: $self->{attempts}");
             delete $self->{Listner};
             delete $self->{Server};
             $self->{attempts}++;
-            $kernel->alias_remove($self->{CONFIG}->{Alias});
             $kernel->delay(reconnect => 60);
 
-        } else { $kernel->yield('shutdown'); }
+        } else { 
+
+			$self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
+			$kernel->yield('shutdown'); 
+
+		}
 
     }
 
@@ -126,19 +134,26 @@ sub _server_error {
     my ($kernel, $self, $operation, $errnum, $errstr, $wheel_id) = 
         @_[KERNEL, OBJECT, ARG0 .. ARG3];
 
+	$self->log($kernel, 'error', "Operation: $operation; Reason: $errnum - $errstr");
+
     if (($errnum == 0) || 
         ($errnum == 73) || 
         ($errnum == 79)) {
 
         if ($self->{attempts} < 10) {
 
+			$self->log($kernel, 'warn', "Attempting reconnection: $self->{attempts}");
             delete $self->{Listner};
             delete $self->{Server};
             $self->{attempts}++;
-            $kernel->alias_remove($self->{CONFIG}->{Alias});
             $kernel->delay(reconnect => 60);
 
-        } else { $kernel->yield('shutdown'); }
+        } else { 
+
+			$self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
+			$kernel->yield('shutdown'); 
+
+		}
 
     }
 
@@ -168,15 +183,47 @@ sub _server_message {
 }
 
 # ---------------------------------------------------------------------
+# Public accessors
+# ---------------------------------------------------------------------
+
+sub stomp {
+	my $self = shift;
+
+	return $self->{stomp};
+
+}
+
+sub config {
+	my ($self, $arg) = @_;
+
+	return $self->{CONFIG}->{$arg};
+
+}
+
+sub host {
+	my ($self) = @_;
+
+	return $self->{Host};
+
+}
+
+sub port {
+	my ($self) = @_;
+
+	return $self->{Port};
+
+}
+	
+# ---------------------------------------------------------------------
 # Public methods
 # ---------------------------------------------------------------------
 
-sub handle_send {
+sub send_data {
     my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
 
-    if (defined($self->{Server}->{Wheel})) {
+    if (defined($self->{Wheel})) {
 
-        $self->{Server}->{Wheel}->put($frame);
+        $self->{Wheel}->put($frame);
 
     }
 
@@ -185,6 +232,13 @@ sub handle_send {
 # ---------------------------------------------------------------------
 # Public methods, these should be overridden, as needed
 # ---------------------------------------------------------------------
+
+sub log {
+    my ($self, $kernel, $level, @args) = @_;
+
+	print "$level: @args\n";
+
+}
 
 sub handle_connection {
     my ($kernel, $self) = @_[KERNEL, OBJECT];
@@ -211,6 +265,11 @@ sub handle_error {
 
 }
 
+sub gather_data {
+    my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
+
+}
+
 1;
 
 
@@ -223,11 +282,11 @@ POE::Component::Client::Stomp - Perl extension for the POE Environment
 
 =head1 SYNOPSIS
 
-This module is an object wrapper to create clients that need to access a 
+This module is a class used to create clients that need to access a 
 message server that communicates with the STOMP protocol. Your program could 
 look as follows:
 
- package myclient;
+ package Client;
 
  use POE:
  use base qw(POE::Component::Client::Stomp);
@@ -238,16 +297,18 @@ look as follows:
  sub handle_connection {
     my ($kernel, $self) = @_[KERNEL, OBJECT];
  
-    my $nframe = $self->{stomp}->connect({login => 'testing', passcode => 'testing'});
-    $kernel->yield('handle_send' => $nframe);
+    my $nframe = $self->stomp->connect({login => 'testing', 
+                                        passcode => 'testing'});
+    $kernel->yield('send_data' => $nframe);
 
  }
 
  sub handle_connected {
     my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
 
-    my $nframe = $self->{stomp}->subscribe({destination => $self->{CONFIG}->{Queue}, ack => 'client'});
-    $kernel->yield('handle_send' => $nframe);
+    my $nframe = $self->stomp->subscribe({destination => $self->config('Queue'), 
+                                          ack => 'client'});
+    $kernel->yield('send_data' => $nframe);
 
  }
  
@@ -255,8 +316,8 @@ look as follows:
     my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
 
     my $message_id = $frame->headers->{'message-id'};
-    my $nframe = $self->{stomp}->ack({'message-id' => $message_id});
-    $kernel->yield('handle_send' => $nframe);
+    my $nframe = $self->stomp->ack({'message-id' => $message_id});
+    $kernel->yield('send_data' => $nframe);
 
  }
 
@@ -265,7 +326,7 @@ look as follows:
  use POE;
  use strict;
 
-     myclient->spawn(
+    Client->spawn(
         Alias => 'testing',
         Queue => '/queue/testing',
     );
@@ -277,11 +338,13 @@ look as follows:
 
 =head1 DESCRIPTION
 
-This module is an object wrapper. It handles the nitty-gritty details of 
-setting up the communications channel to a message queue server. It will 
-attempt to maintain that channel when/if that server should happen to 
-disappear off the network. There is nothing more unpleasent then having to go
-around to 30 servers and restarting processes.
+This module handles the nitty-gritty details of setting up the communications 
+channel to a message queue server. You will need to sub-class this module
+with your own for it to be usefull.
+
+An attempt to maintain that channel will be made when/if that server should 
+happen to disappear off the network. There is nothing more unpleasent then 
+having to go around to dozens of servers and restarting processes.
 
 When messages are received, specific events are generated. Those events are 
 based on the message type. If you are interested in those events you should 
@@ -294,31 +357,28 @@ do nothing.
 
 =item spawn
 
-This method initializes the object and starts a session to handle the 
+This method initializes the class and starts a session to handle the 
 communications channel. The only parameters that having meaning are:
 
 =over 4
 
- Alias         - The alias for this session, defaults to 'stomp-client'
- RemoteAddress - The host where the server lives, defaults to 'localhost'
- RemotePort    - The port the server is listening on, defaults to '61613'
+ Alias         - The session alias, defaults to 'stomp-client'
+ RemoteAddress - The servers hostname, defaults to 'localhost'
+ RemotePort    - The servers port, defaults to '61613'
 
 =back
 
-Any other passed parameters are available in the $self->{CONFIG} hash. The 
-module POE::Component::Client::Stomp::Utils is also loaded and those methods
-can be reached using the $self->{stomp} variable. This module is a handy way
-to create STOMP frames.
+All other parameters are stored within an internal config.
 
-=item handle_send
+=item send_data
 
-You use this event to send STOMP frames to the server. 
+You use this event to send Stomp frames to the server. 
 
 =over 4
 
 =item Example
 
- $kernel->yield('handle_send', $frame);
+ $kernel->yield('send_data', $frame);
 
 =back
 
@@ -335,9 +395,9 @@ connection to the message server. For the most part you should send a
  sub handle_connection {
      my ($kernel, $self) = @_[KERNEL,$OBJECT];
  
-    my $nframe = $self->{stomp}->connect({login => 'testing', 
-                                          passcode => 'testing'});
-    $kernel->yield('handle_send' => $nframe);
+    my $nframe = $self->stomp->connect({login => 'testing', 
+                                        passcode => 'testing'});
+    $kernel->yield('send_data' => $nframe);
      
  }
 
@@ -356,8 +416,9 @@ generating/processing frames.
  sub handle_connected {
      my ($kernel, $self, $frame) = @_[KERNEL,$OBJECT,ARG0];
  
-     my $nframe = $self->{stomp}->subscribe({destination => $self->{CONFIG}->{Queue}, ack => 'client'});
-     $kernel->yield('handle_send' => $nframe);
+     my $nframe = $self->stomp->subscribe({destination => $self->config('Queue'), 
+                                           ack => 'client'});
+     $kernel->yield('send_data' => $nframe);
      
  }
 
@@ -379,8 +440,8 @@ This event and corresponding method is used to process "MESSAGE" frames.
      my ($kernel, $self, $frame) = @_[KERNEL,$OBJECT,ARG0];
  
      my $message_id = $frame->headers->{'message-id'};
-     my $nframe = $self->{stomp}->ack({'message-id' => $message_id});
-     $kernel->yield('handle_send' => $nframe);
+     my $nframe = $self->stomp->ack({'message-id' => $message_id});
+     $kernel->yield('send_data' => $nframe);
      
  }
 
@@ -425,6 +486,81 @@ This event and corresponding method is used to process "ERROR" frames.
 
 This example really doesn't do much. Error handling is pretty much what the
 process needs to do when something unexpected happens.
+
+=back
+
+=item gather_data
+
+This event and corresponding method is used to "gather data". What is done
+with the data is up to the program.
+
+=over 4
+
+=item Example
+
+ sub gather_data {
+     my ($kernel, $self) = @_[KERNEL,$OBJECT];
+ 
+ }
+
+=back
+
+=item log
+
+This method is used internally to send a log message to stdout. It can be 
+overridden to hook into your perferred logging module. This module currently
+uses the following levels internally: 'warn', 'error'
+
+=over 4
+
+=item Example
+
+ sub log {
+     my ($self, $kernel, $level, @args) = @_;
+
+     if ($level eq 'error') {
+
+         $kernel->post('logger' => error => @args);
+
+     } elsif ($level eq 'warn') {
+
+         $kernel->post('logger' => warn => @args);
+
+    }
+
+ }
+
+=back
+
+=head1 ACCESSORS
+
+=over 4
+
+=item stomp
+
+This returns an object to the interal POE::Component::Client::Stomp::Utils 
+object. This is very useful for creating Stomp frames.
+
+=over 4
+
+=item Example
+
+ $frame = $self->stomp->connect({login => 'testing', 
+                                 passcode => 'testing'});
+ $kernel->yield('send_data' => $frame);
+
+=back
+
+=item config
+
+This accessor is used to return items from the internal config. The config is
+loaded from the parameters that were used when spawn() was called.
+
+=over 4
+
+=item Example
+
+ $logger = $self->config('Logger');
 
 =back
 
