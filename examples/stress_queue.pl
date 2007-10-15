@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #
-# File: dump_queue.pl
-# Date: 27-Sep-2007
+# File: stress_queue.pl
+# Date: 15-Oct-2007
 # By  : Kevin Esteb
 #
 # Simple test program to test POE interaction.
@@ -18,6 +18,19 @@ use warnings;
 
 # ----------------------------------------------------------------------
 
+sub spawn {
+    my $class = shift;
+
+    my %args = @_;
+    my $self = $class->SUPER::spawn(%args);
+
+    $self->{counter} = 0;
+    $self->{alarm_id} = 0;
+
+    return $self;
+
+}
+
 sub handle_connection {
     my ($kernel, $self) = @_[KERNEL,OBJECT];
 
@@ -25,7 +38,6 @@ sub handle_connection {
 	my $buffer = sprintf("Connected to %s on %s", $self->host, $self->port);
 
     $self->log($kernel, 'info', $buffer);
-
     $frame = $self->stomp->connect({login => 'testing', 
                                     passcode => 'testing'});
     $kernel->yield('send_data' => $frame);
@@ -35,53 +47,51 @@ sub handle_connection {
 sub handle_connected {
     my ($kernel, $self, $frame) = @_[KERNEL,OBJECT,ARG0];
 
-    my $nframe;
-
-    $nframe = $self->stomp->subscribe({destination => $self->config('Queue'), 
-                                       ack => 'client'});
-    $kernel->yield('send_data' => $nframe);
+    $kernel->yield('gather_data');
 
 }
 
-sub handle_message {
-    my ($kernel, $self, $frame) = @_[KERNEL,OBJECT,ARG0];
+sub gather_data {
+    my ($kernel, $self) = @_[KERNEL,OBJECT];
+    
+    $self->{counter}++;
+    my $body = sprintf("Message #%s", $self->{counter});
+    my $frame = $self->stomp->send({destination => $self->config('Queue'),
+                                    data => $body});
 
-    my $message_id = $frame->headers->{'message-id'};
-    my $nframe = $self->stomp->ack({'message-id' => $message_id});
-	my $buffer = sprintf("Received message #%s", $message_id);
-    $self->log($kernel, 'info', $buffer);
-    print Dumper($frame) if ($self->config('Dump'));
-    $kernel->yield('send_data' => $nframe);
+    $self->{alarm_id} = $kernel->delay_set('gather_data', 15);
+    $kernel->yield('send_data' => $frame);
 
 }
 
 sub log {
-	my ($self, $kernel, $level, @args) = @_;
+    my ($self, $kernel, $level, @args) = @_;
 
-	if ($level eq 'error') {
+    if ($level eq 'error') {
 
-		print "Error: @args\n";
+        print "Error: @args\n";
 
-	} elsif ($level eq 'warn') {
+    } elsif ($level eq 'warn') {
 
-		print "Warn : @args\n";
+        print "Warn : @args\n";
 
-	} elsif ($level eq 'debug') {
+    } elsif ($level eq 'debug') {
 
-		print "Debug: @args\n" if $self->config('Debug');
+        print "Debug: @args\n" if $self->config('Debug');
 
-	} else {
+    } else {
 
-	    print "Info : @args\n";
+		print "Info : @args\n";
 
 	}
 
 }
 
 sub handle_shutdown {
-	my ($self, $kernel) = @_;
+    my ($self, $kernel) = @_;
 
-	print "Shutting down\n";
+    $kernel->alarm_remove($self->{alarm_id});
+    print "Shutting down\n";
 
 }
 
@@ -95,7 +105,6 @@ use Getopt::Long;
 use strict;
 use warnings;
 
-my $dump = 0;
 my $debug = 0;
 my $port = '61613';
 my $hostname = 'localhost';
@@ -119,7 +128,7 @@ sub usage {
     print << "EOT";
 $Script
 $Line
-dump_queue - Dump a STOMP message queue.
+stress_queue - Send messages to a STOMP message queue.
 Version: $VERSION
 
 Usage:
@@ -129,12 +138,11 @@ Usage:
     $0 [--queue] <queue name>
     $0 [--dump]
     $0 [--help]
-	$0 [--debug]
+    $0 [--debug]
 
     --hostname..The host where the server is localed
     --port......The port to connect too
     --queue.....The message queue to listent too
-    --dump......A flag to indicate dumping of the message body
     --debug.....Print debugging messages
     --help......Print this help message.
 
@@ -155,8 +163,7 @@ sub setup {
                'hostname=s' => \$hostname,
                'port=s' => \$port,
                'queue=s' => \$queue,
-               'dump' => \$dump,
-	           'debug' => \$debug);
+               'debug' => \$debug);
 
     if ($help) {
 
@@ -176,8 +183,7 @@ main: {
         RemotePort => $port,
         Alias => 'testing',
         Queue => $queue,
-        Dump => $dump,
-		Debug => $debug,
+        Debug => $debug,
     );
 
     $poe_kernel->state('got_signal', \&handle_signals);

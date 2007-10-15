@@ -5,13 +5,10 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'POE::Component::Client::Stomp',
     VERSION_FROM      => 'lib/POE/Component/Client/Stomp.pm', # finds $VERSION
-    PREREQ_PM         => {}, # e.g., Module::Name => 1.1
+    PREREQ_PM         => {POE::Component::Client::Stomp::Utils => 0, 
+	                      POE::Filter::Stomp => 0, 
+						  Net::Stomp => 0}, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/POE/Component/Client/Stomp.pm', # retrieve abstract from module
        AUTHOR         => 'Kevin Esteb <kesteb@wsipc.org>') : ()),
-    LIBS              => [''], # e.g., '-lm'
-    DEFINE            => '', # e.g., '-DHAVE_SOMETHING'
-    INC               => '-I.', # e.g., '-I. -I/usr/include/other'
-	# Un-comment this if you add C files to link with later:
-    # OBJECT            => '$(O_FILES)', # link all the C files too
 );

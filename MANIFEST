@@ -6,4 +6,5 @@ t/POE-Component-Client-Stomp.t
 lib/POE/Component/Client/Stomp.pm
 examples/dump_queue.pl
 examples/feed_queue.pl
+examples/stress_queue.pl
 META.yml                                 Module meta-data (added by MakeMaker)
