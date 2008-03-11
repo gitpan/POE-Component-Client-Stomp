@@ -15,9 +15,10 @@ use warnings;
 use constant DEFAULT_HOST => 'localhost';
 use constant DEFAULT_PORT => 61613;
 
+my @errors = qw(0 73 78 79 111);
 my @reconnections = qw(60 120 240 480 960 1920 3840);
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 # ---------------------------------------------------------------------
 
@@ -32,7 +33,7 @@ sub spawn {
     $args{Alias} = 'stomp-client' unless defined $args{Alias} and $args{Alias};
 
     $self->{CONFIG} = \%args;
-	$self->{count} = scalar(@reconnections);
+    $self->{count} = scalar(@reconnections);
     $self->{stomp} = POE::Component::Client::Stomp::Utils->new();
     $self->{attempts} = 0;
 
@@ -48,7 +49,7 @@ sub spawn {
                            _server_error _server_message _client_close
                            handle_message handle_receipt handle_error
                            handle_connected handle_connection
-                           send_data gather_data) ],
+                           send_data gather_data connection_down) ],
         ],
         (ref $args{options} eq 'HASH' ? (options => $args{options}) : () ),
     );
@@ -138,7 +139,11 @@ sub _server_connection_failed {
     delete $self->{Listner};
     delete $self->{Wheel};
 
-	$self->_reconnect($kernel) if ($errnum == 111); 
+    foreach my $error (@errors) {
+
+        $self->_reconnect($kernel) if ($errnum == $error);
+
+    }
 
 }
 
@@ -152,9 +157,13 @@ sub _server_error {
     delete $self->{Listner};
     delete $self->{Wheel};
 
-	$self->_reconnect($kernel) if (($errnum == 0)  || 
-		                           ($errnum == 73) || 
-		                           ($errnum == 79));
+    $kernel->yield('connection_down');
+
+    foreach my $error (@errors) {
+
+        $self->_reconnect($kernel) if ($errnum == $error);
+
+    }
 
 }
 
@@ -192,23 +201,23 @@ sub _server_message {
 }
 
 sub _reconnect {
-	my ($self, $kernel) = @_;
+    my ($self, $kernel) = @_;
 
-	$self->log($kernel, 'debug', "Attempts: $self->{attempts}, Count: $self->{count}");
+    $self->log($kernel, 'debug', "Attempts: $self->{attempts}, Count: $self->{count}");
 
-	if ($self->{attempts} < $self->{count}) {
+    if ($self->{attempts} < $self->{count}) {
 
-		my $delay = $reconnections[$self->{attempts}];
-		$self->log($kernel, 'warn', "Attempting reconnection: $self->{attempts}, waiting: $delay seconds");
-		$self->{attempts}++;
-		$kernel->delay('reconnect', $delay);
+        my $delay = $reconnections[$self->{attempts}];
+        $self->log($kernel, 'warn', "Attempting reconnection: $self->{attempts}, waiting: $delay seconds");
+        $self->{attempts}++;
+        $kernel->delay('reconnect', $delay);
 
-	} else { 
+    } else {
 
-		$self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
-		$kernel->yield('shutdown'); 
+        $self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
+        $kernel->yield('shutdown'); 
 
-	}
+    }
 
 }
 
@@ -302,6 +311,11 @@ sub handle_error {
 
 sub gather_data {
     my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
+
+}
+
+sub connection_down {
+    my ($kernel, $self) = @_[KERNEL, OBJECT];
 
 }
 
@@ -456,7 +470,7 @@ generating/processing frames.
      
  }
 
-This example shows you how to subscribe to a particilar queue. The queue name
+This example shows you how to subscribe to a particular queue. The queue name
 was passed as a parameter to spawn() so it is available in the $self->{CONFIG}
 hash.
 
@@ -543,11 +557,31 @@ is up to your program. But usually a "send_data" event is generated.
 
 =back
 
+=item connection_down
+
+This event and corresponding method is a hook to allow you to be notified if 
+the connection to the server is currently down. By default it does nothing. 
+But it would be usefull to notify "gather_data" to temporaily stop doing 
+whatever it is currently doing.
+
+=over 4
+
+=item Example
+
+ sub connection_down {
+    my ($kernel, $self) = @_[KERNEL,OBJECT];
+
+    # do something here
+
+ }
+
+=back
+
 =item log
 
 This method is used internally to send a log message to stdout. It can be 
 overridden to hook into your perferred logging module. This module currently
-uses the following levels internally: 'warn', 'error'
+uses the following levels internally: 'warn', 'error', 'debug'
 
 =over 4
 
@@ -570,7 +604,7 @@ uses the following levels internally: 'warn', 'error'
 
 =back
 
-item handle_shutdown
+=item handle_shutdown
 
 This method is a hook and should be overidden to do "shutdown" stuff. By
 default it does nothing.
@@ -585,6 +619,8 @@ default it does nothing.
     # do something here
 
  }
+
+=back
 
 =back
 
@@ -620,11 +656,13 @@ loaded from the parameters that were used when spawn() was called.
 
 =back
 
+=back
+
 =head1 SEE ALSO
 
  Net::Stomp::Frame
  POE::Filter::Stomp
- POE::Component::Server::MessageQueue
+ POE::Component::MessageQueue
  POE::Compoment::Client::Stomp::Utils;
 
  For information on the Stomp protocol: http://stomp.codehaus.org/Protocol

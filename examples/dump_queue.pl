@@ -22,7 +22,7 @@ sub handle_connection {
     my ($kernel, $self) = @_[KERNEL,OBJECT];
 
     my $frame;
-	my $buffer = sprintf("Connected to %s on %s", $self->host, $self->port);
+    my $buffer = sprintf("Connected to %s on %s", $self->host, $self->port);
 
     $self->log($kernel, 'info', $buffer);
 
@@ -48,7 +48,7 @@ sub handle_message {
 
     my $message_id = $frame->headers->{'message-id'};
     my $nframe = $self->stomp->ack({'message-id' => $message_id});
-	my $buffer = sprintf("Received message #%s", $message_id);
+    my $buffer = sprintf("Received message #%s", $message_id);
     $self->log($kernel, 'info', $buffer);
     print Dumper($frame) if ($self->config('Dump'));
     $kernel->yield('send_data' => $nframe);
@@ -56,32 +56,32 @@ sub handle_message {
 }
 
 sub log {
-	my ($self, $kernel, $level, @args) = @_;
+    my ($self, $kernel, $level, @args) = @_;
 
-	if ($level eq 'error') {
+    if ($level eq 'error') {
 
-		print "Error: @args\n";
+        print "Error: @args\n";
 
-	} elsif ($level eq 'warn') {
+    } elsif ($level eq 'warn') {
 
-		print "Warn : @args\n";
+        print "Warn : @args\n";
 
-	} elsif ($level eq 'debug') {
+    } elsif ($level eq 'debug') {
 
-		print "Debug: @args\n" if $self->config('Debug');
+        print "Debug: @args\n" if $self->config('Debug');
 
-	} else {
+    } else {
 
-	    print "Info : @args\n";
+        print "Info : @args\n";
 
-	}
+    }
 
 }
 
 sub handle_shutdown {
-	my ($self, $kernel) = @_;
+    my ($self, $kernel) = @_;
 
-	print "Shutting down\n";
+    print "Shutting down\n";
 
 }
 
@@ -129,7 +129,7 @@ Usage:
     $0 [--queue] <queue name>
     $0 [--dump]
     $0 [--help]
-	$0 [--debug]
+    $0 [--debug]
 
     --hostname..The host where the server is localed
     --port......The port to connect too
@@ -156,7 +156,7 @@ sub setup {
                'port=s' => \$port,
                'queue=s' => \$queue,
                'dump' => \$dump,
-	           'debug' => \$debug);
+               'debug' => \$debug);
 
     if ($help) {
 
@@ -177,7 +177,7 @@ main: {
         Alias => 'testing',
         Queue => $queue,
         Dump => $dump,
-		Debug => $debug,
+        Debug => $debug,
     );
 
     $poe_kernel->state('got_signal', \&handle_signals);

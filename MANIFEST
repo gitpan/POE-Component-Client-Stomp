@@ -2,7 +2,9 @@ Changes
 Makefile.PL
 MANIFEST
 README
-t/POE-Component-Client-Stomp.t
+t/01_load.t
+t/02_basic.t
+t/99_pod.t
 lib/POE/Component/Client/Stomp.pm
 examples/dump_queue.pl
 examples/feed_queue.pl

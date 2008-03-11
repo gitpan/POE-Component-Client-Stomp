@@ -68,7 +68,7 @@ sub setup {
                'hostname=s' => \$hostname,
                'port=s' => \$port,
                'queue=s' => \$queue,
-	           'count=i' => \$count);
+               'count=i' => \$count);
 
     if ($help) {
 
@@ -81,18 +81,18 @@ sub setup {
 
 main: {
 
-	setup();
+    setup();
 
-	$stomp = Net::Stomp->new({ hostname => $hostname, port => $port });
-	$stomp->connect( { login => 'testing', passcode => 'testing' } );
+    $stomp = Net::Stomp->new({ hostname => $hostname, port => $port });
+    $stomp->connect( { login => 'testing', passcode => 'testing' } );
 
-	for (my $x = 0; $x < $count; $x++) {
+    for (my $x = 0; $x < $count; $x++) {
 
-		$stomp->send({ destination => $queue, body => "test message: $x"  });
+        $stomp->send({ destination => $queue, body => "test message: $x"  });
 
-	}
+    }
 
-	$stomp->disconnect;
+    $stomp->disconnect;
 
 }
 

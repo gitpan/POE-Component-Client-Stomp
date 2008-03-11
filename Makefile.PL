@@ -5,10 +5,10 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'POE::Component::Client::Stomp',
     VERSION_FROM      => 'lib/POE/Component/Client/Stomp.pm', # finds $VERSION
-    PREREQ_PM         => {POE::Component::Client::Stomp::Utils => 0, 
-	                      POE::Filter::Stomp => 0, 
-						  Net::Stomp => 0}, # e.g., Module::Name => 1.1
+    PREREQ_PM         => {Net::Stomp => 0,
+                          POE::Filter::Stomp => 0, 
+                          POE::Component::Client::Stomp::Utils => 0}, 
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/POE/Component/Client/Stomp.pm', # retrieve abstract from module
-       AUTHOR         => 'Kevin Esteb <kesteb@wsipc.org>') : ()),
+       AUTHOR         => 'Kevin L. Esteb <kesteb@wsipc.org>') : ()),
 );

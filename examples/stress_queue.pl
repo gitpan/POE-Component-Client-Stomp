@@ -35,7 +35,7 @@ sub handle_connection {
     my ($kernel, $self) = @_[KERNEL,OBJECT];
 
     my $frame;
-	my $buffer = sprintf("Connected to %s on %s", $self->host, $self->port);
+    my $buffer = sprintf("Connected to %s on %s", $self->host, $self->port);
 
     $self->log($kernel, 'info', $buffer);
     $frame = $self->stomp->connect({login => 'testing', 
@@ -81,9 +81,9 @@ sub log {
 
     } else {
 
-		print "Info : @args\n";
+        print "Info : @args\n";
 
-	}
+    }
 
 }
 

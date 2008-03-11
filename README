@@ -1,4 +1,4 @@
-POE-Component-Client-Stomp version 0.03
+POE-Component-Client-Stomp version 0.05
 =======================================
 
 This module is a object wrapper around Stomp client. It provides
