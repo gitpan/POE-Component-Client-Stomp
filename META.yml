@@ -1,13 +1,14 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         POE-Component-Client-Stomp
-version:      0.05
+version:      0.06
 version_from: lib/POE/Component/Client/Stomp.pm
 installdirs:  site
 requires:
     Net::Stomp:                    0
+    POE:                           0.38
     POE::Component::Client::Stomp::Utils: 0
-    POE::Filter::Stomp:            0
+    POE::Filter::Stomp:            0.02
 
 distribution_type: module
 generated_by: ExtUtils::MakeMaker version 6.30

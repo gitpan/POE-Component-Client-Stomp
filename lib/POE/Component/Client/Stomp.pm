@@ -18,7 +18,7 @@ use constant DEFAULT_PORT => 61613;
 my @errors = qw(0 73 78 79 111);
 my @reconnections = qw(60 120 240 480 960 1920 3840);
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 # ---------------------------------------------------------------------
 
