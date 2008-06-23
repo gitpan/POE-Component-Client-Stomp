@@ -8,7 +8,7 @@ Revision history for Perl extension POE::Component::Client::Stomp.
     - Changed the module to be object oriented. I was having problems with
       sub classing the module to reduce complexity. I also wanted a dispatcher
       based on message types. This version does those things.
-      
+
 0.03  09-Oct-2007 K.Esteb
     - Changed event/method "handle_send" to "send_data", it seemed more
         syntactically correct with the new "gather_data" event/method.
@@ -47,8 +47,12 @@ Revision history for Perl extension POE::Component::Client::Stomp.
 0.06  16-Apr-2008 K.Esteb
       Bug fix release for RT #34743, #34742.
       POE is now a required module. Seems rather obvious, but I had some bug
-	    reports on this one.
-	  Removed 02_basic.t, Received a bug report on it not working. Sigh, 
-	    release 0.05 explains why it may not work. So I guess this "fixes" 
-		the above problem.
-		
+        reports on this one.
+      Removed 02_basic.t, Received a bug report on it not working. Sigh, 
+        release 0.05 explains why it may not work. So I guess this "fixes" 
+        the above problem.
+
+0.06  23-Jun-2008 K.Esteb
+      Alejandro Imass made the suggestion that reconnections should recycle 
+        after they have expired. This version includes his logic to do so.
+

@@ -18,7 +18,7 @@ use constant DEFAULT_PORT => 61613;
 my @errors = qw(0 73 78 79 111);
 my @reconnections = qw(60 120 240 480 960 1920 3840);
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 # ---------------------------------------------------------------------
 
@@ -31,6 +31,7 @@ sub spawn {
     my $self = bless ({}, $package);
 
     $args{Alias} = 'stomp-client' unless defined $args{Alias} and $args{Alias};
+    $args{RetryReconnect} = 1 unless defined $args{RetryReconnect};
 
     $self->{CONFIG} = \%args;
     $self->{count} = scalar(@reconnections);
@@ -214,8 +215,18 @@ sub _reconnect {
 
     } else {
 
-        $self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
-        $kernel->yield('shutdown'); 
+        if ($self->config('RetryReconnect')) {
+
+            $self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
+            $kernel->yield('shutdown'); 
+
+        } else {
+
+            $self->log($kernel, 'warn', 'Cycling reconnection attempts, but not shutting down...');
+            $self->{attempts} = 0;
+            $kernel->yield('reconnect');
+
+        }
 
     }
 
@@ -410,9 +421,10 @@ communications channel. The only parameters that having meaning are:
 
 =over 4
 
- Alias         - The session alias, defaults to 'stomp-client'
- RemoteAddress - The servers hostname, defaults to 'localhost'
- RemotePort    - The servers port, defaults to '61613'
+ Alias          - The session alias, defaults to 'stomp-client'
+ RemoteAddress  - The servers hostname, defaults to 'localhost'
+ RemotePort     - The servers port, defaults to '61613'
+ RetryReconnect - Wither to attempt reconnections after they run out
 
 =back
 
