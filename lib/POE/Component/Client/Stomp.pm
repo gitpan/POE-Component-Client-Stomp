@@ -15,10 +15,10 @@ use warnings;
 use constant DEFAULT_HOST => 'localhost';
 use constant DEFAULT_PORT => 61613;
 
-my @errors = qw(0 73 78 79 111);
+my @errors = qw(0 68 73 78 79 110 111);
 my @reconnections = qw(60 120 240 480 960 1920 3840);
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 # ---------------------------------------------------------------------
 

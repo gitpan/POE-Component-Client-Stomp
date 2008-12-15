@@ -52,7 +52,10 @@ Revision history for Perl extension POE::Component::Client::Stomp.
         release 0.05 explains why it may not work. So I guess this "fixes" 
         the above problem.
 
-0.06  23-Jun-2008 K.Esteb
+0.07  23-Jun-2008 K.Esteb
       Alejandro Imass made the suggestion that reconnections should recycle 
         after they have expired. This version includes his logic to do so.
+
+0.08  15-Dec-2008 K.Esteb
+      Added some new error codes for reconnection attempts.
 
