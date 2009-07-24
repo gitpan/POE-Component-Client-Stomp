@@ -59,3 +59,6 @@ Revision history for Perl extension POE::Component::Client::Stomp.
 0.08  15-Dec-2008 K.Esteb
       Added some new error codes for reconnection attempts.
 
+0.09  24-Jul-2009 K.Esteb
+      Added some more error codes for reconnection attempts.
+      
