@@ -15,10 +15,10 @@ use warnings;
 use constant DEFAULT_HOST => 'localhost';
 use constant DEFAULT_PORT => 61613;
 
-my @errors = qw(0 32 68 73 78 79 110 111);
+my @errors = qw(0 32 68 73 78 79 110 104 111);
 my @reconnections = qw(60 120 240 480 960 1920 3840);
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 # ---------------------------------------------------------------------
 
@@ -204,6 +204,8 @@ sub _server_message {
 sub _reconnect {
     my ($self, $kernel) = @_;
 
+    my $retry;
+
     $self->log($kernel, 'debug', "Attempts: $self->{attempts}, Count: $self->{count}");
 
     if ($self->{attempts} < $self->{count}) {
@@ -215,16 +217,18 @@ sub _reconnect {
 
     } else {
 
-        if ($self->config('RetryReconnect')) {
+        $retry = $self->config('RetryReconnect') || 0;
 
-            $self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
-            $kernel->yield('shutdown'); 
-
-        } else {
+        if ($retry) {
 
             $self->log($kernel, 'warn', 'Cycling reconnection attempts, but not shutting down...');
             $self->{attempts} = 0;
             $kernel->yield('reconnect');
+
+        } else {
+
+            $self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
+            $kernel->yield('shutdown'); 
 
         }
 
