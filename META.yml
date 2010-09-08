@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               POE-Component-Client-Stomp
-version:            0.10
+version:            0.11
 abstract:           Perl extension for the POE Environment
 author:
     - Kevin L. Esteb <kesteb@wsipc.org>

@@ -12,13 +12,13 @@ Revision history for Perl extension POE::Component::Client::Stomp.
 0.03  09-Oct-2007 K.Esteb
     - Changed event/method "handle_send" to "send_data", it seemed more
         syntactically correct with the new "gather_data" event/method.
-      Added accessors for stomp, config, host and port.
+      Added successors for stomp, config, host and port.
       Added a log method, this method currently knows "warn" and "error"
-        levels. This should be overridden by your class, for your prefered
+        levels. This should be overridden by your class, for your preferred
         logger.
       Added a event/method "gather_data", it was needed to send the
         object to the method.
-      Changed the internals to use the new accessors.
+      Changed the internals to use the new assessors.
       Added a couple of examples.
       Made the reconnection code more robust. Probably needs more work.
 
@@ -27,7 +27,7 @@ Revision history for Perl extension POE::Component::Client::Stomp.
       Figured out how to require other modules. So Net::Stomp,
         POE::Filter::Stomp and POE::Component::Client::Stomp::Utils are
         now required modules.
-      Added a method "handle_shutdown" this should be orridden if specific 
+      Added a method "handle_shutdown" this should be overridden if specific 
         stuff needs to be done when a shutdown has been initiated. By default 
         nothing will be done.
       Fixed a syntax mistake in the documentation.
@@ -53,7 +53,7 @@ Revision history for Perl extension POE::Component::Client::Stomp.
         the above problem.
 
 0.07  23-Jun-2008 K.Esteb
-      Alejandro Imass made the suggestion that reconnections should recycle 
+      Alejandro Imass made the suggestion that reconnection's should recycle 
         after they have expired. This version includes his logic to do so.
 
 0.08  15-Dec-2008 K.Esteb
@@ -61,9 +61,18 @@ Revision history for Perl extension POE::Component::Client::Stomp.
 
 0.09  24-Jul-2009 K.Esteb
       Added some more error codes for reconnection attempts.
-      
+
 0.10  04-Nov-2009 K.Esteb
       Added some more error codes for reconnection attempts.
-      Changed the logic from 0.07 for retrying reconnections. It didn't seem
+      Changed the logic from 0.07 for retrying reconnection's. It didn't seem
         to work correctly.
-        
+
+0.11  19-Aug-2010 K.Esteb
+      Added a "EnableKeepAlive" config option to set SO_KEEPALIVE at the
+        socket level. 
+      Also added code to set the socket for reasonable levels of 
+        keepalive packet generation. Unfortunately the constants; 
+        TCP_KEEPCNT, TCP_KEEPIDLE and TCP_KEEPINTVL have different values 
+        depending on the OS being used. As such, the this feature only 
+        works on Linux and AIX. 
+

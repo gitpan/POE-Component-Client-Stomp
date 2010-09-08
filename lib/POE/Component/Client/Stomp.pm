@@ -2,23 +2,41 @@ package POE::Component::Client::Stomp;
 
 use POE;
 use Carp;
-use Socket;
+use Socket ':all'; 
 use POE::Filter::Stomp;
 use POE::Wheel::ReadWrite;
 use POE::Wheel::SocketFactory;
 use POE::Component::Client::Stomp::Utils;
 
-use 5.008;
+use 5.8.2;
 use strict;
 use warnings;
 
-use constant DEFAULT_HOST => 'localhost';
-use constant DEFAULT_PORT => 61613;
+my $TCP_KEEPCNT = 0;
+my $TCP_KEEPIDLE = 0;
+my $TCP_KEEPINTVL = 0;
+
+use constant DEFAULT_HOST  => 'localhost';
+use constant DEFAULT_PORT  => 61613;
+
+if ($^O eq "aix") {           # from /usr/include/netinet/tcp.h
+
+    $TCP_KEEPIDLE  = 0x11;
+    $TCP_KEEPINTVL = 0x12;
+    $TCP_KEEPCNT   = 0x13;
+
+} elsif ($^O eq "linux"){     # from /usr/include/netinet/tcp.h
+
+    $TCP_KEEPIDLE  = 4;
+    $TCP_KEEPINTVL = 5;
+    $TCP_KEEPCNT   = 6;
+
+}
 
 my @errors = qw(0 32 68 73 78 79 110 104 111);
 my @reconnections = qw(60 120 240 480 960 1920 3840);
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 # ---------------------------------------------------------------------
 
@@ -32,6 +50,7 @@ sub spawn {
 
     $args{Alias} = 'stomp-client' unless defined $args{Alias} and $args{Alias};
     $args{RetryReconnect} = 1 unless defined $args{RetryReconnect};
+    $args{EnableKeepAlive} = defined($args{EnableKeepAlive}) ? $args{EnableKeepAlive} : 0;
 
     $self->{CONFIG} = \%args;
     $self->{count} = scalar(@reconnections);
@@ -110,6 +129,8 @@ sub _server_connected {
     my ($kernel, $self, $socket, $peeraddr, $peerport, $wheel_id) = 
        @_[KERNEL, OBJECT, ARG0 .. ARG3];
 
+    my $os = $^O;
+
     $self->log($kernel, 'debug', '_server_connected()');
 
     my $wheel = POE::Wheel::ReadWrite->new(
@@ -118,6 +139,32 @@ sub _server_connected {
         InputEvent => '_server_message',
         ErrorEvent => '_server_error',
     );
+
+    if ($self->config('EnableKeepAlive')) {
+
+        $self->log($kernel, 'debug', 'keepalive activated');
+
+        # turn keepalive on, this should send a keepalive 
+        # packet once every 2 hours according to the RFC.
+
+        setsockopt($socket, SOL_SOCKET,  SO_KEEPALIVE,  1);
+
+        if (($os eq 'linux') or ($os eq 'aix')) {
+
+            $self->log($kernel, 'debug', 'adjusting keepalive activity');
+
+            # adjust from system defaults, all values are in seconds.
+            # so this does the following:
+            #     every 15 minutes send upto 3 packets at 5 second intervals
+            #         if no reply, the connection is down.
+
+            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPIDLE,  900);  # 15 minutes
+            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPINTVL, 5);    # 
+            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPCNT,   3);    # 
+
+        }
+
+    }
 
     my $host = gethostbyaddr($peeraddr, AF_INET);
 
@@ -425,10 +472,11 @@ communications channel. The only parameters that having meaning are:
 
 =over 4
 
- Alias          - The session alias, defaults to 'stomp-client'
- RemoteAddress  - The servers hostname, defaults to 'localhost'
- RemotePort     - The servers port, defaults to '61613'
- RetryReconnect - Wither to attempt reconnections after they run out
+ Alias           - The session alias, defaults to 'stomp-client'
+ RemoteAddress   - The servers hostname, defaults to 'localhost'
+ RemotePort      - The servers port, defaults to '61613'
+ RetryReconnect  - Wither to attempt reconnections after they run out
+ EnableKeepAlive - For those pesky firewalls, defaults to false
 
 =back
 
