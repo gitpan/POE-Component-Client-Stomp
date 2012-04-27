@@ -16,9 +16,6 @@ my $TCP_KEEPCNT = 0;
 my $TCP_KEEPIDLE = 0;
 my $TCP_KEEPINTVL = 0;
 
-use constant DEFAULT_HOST  => 'localhost';
-use constant DEFAULT_PORT  => 61613;
-
 if ($^O eq "aix") {           # from /usr/include/netinet/tcp.h
 
     $TCP_KEEPIDLE  = 0x11;
@@ -36,8 +33,12 @@ if ($^O eq "aix") {           # from /usr/include/netinet/tcp.h
 my @errors = qw(0 32 68 73 78 79 110 104 111);
 my @reconnections = qw(60 120 240 480 960 1920 3840);
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
+use Data::Dumper;
+
+# ---------------------------------------------------------------------
+# Public Methods
 # ---------------------------------------------------------------------
 
 sub spawn {
@@ -48,9 +49,11 @@ sub spawn {
     my %args = @_;
     my $self = bless ({}, $package);
 
-    $args{Alias} = 'stomp-client' unless defined $args{Alias} and $args{Alias};
-    $args{RetryReconnect} = 1 unless defined $args{RetryReconnect};
+    $args{Alias}           = 'stomp-client' unless defined $args{Alias} and $args{Alias};
+    $args{RetryReconnect}  = 1 unless defined $args{RetryReconnect};
     $args{EnableKeepAlive} = defined($args{EnableKeepAlive}) ? $args{EnableKeepAlive} : 0;
+    $args{RemoteAddress}   = 'localhost' unless defined $args{RemoteAddress};
+    $args{RemotePort}      = 61613 unless defined $args{RemotePort};
 
     $self->{CONFIG} = \%args;
     $self->{count} = scalar(@reconnections);
@@ -60,231 +63,62 @@ sub spawn {
     POE::Session->create(
         object_states => [
             $self => { 
-                _start => '_client_start',
-                _stop => '_client_stop',
-                shutdown => '_client_close',
-                reconnect => '_server_connect',
+                _start            => '_session_start',
+                _stop             => '_session_stop',
+                server_connect    => '_server_connect',
+                server_connected  => '_server_connected',
+                server_reconnect  => '_server_connect',
+                server_error      => '_server_error',
+                server_message    => '_server_message',
+                server_connection_failed => '_server_connection_failed', 
+                session_interrupt => '_session_interrupt',
+                session_reload    => '_session_reload',
+                shutdown          => '_session_shutdown',
             },
-            $self => [ qw( _server_connect _server_connected _server_connection_failed 
-                           _server_error _server_message _client_close
-                           handle_message handle_receipt handle_error
-                           handle_connected handle_connection
-                           send_data gather_data connection_down) ],
+            $self => [ qw( 
+                handle_message 
+                handle_receipt 
+                handle_error
+                handle_connected 
+                handle_connection
+                send_data 
+                gather_data 
+                connection_down
+                connection_up
+            ) ],
         ],
-        (ref $args{options} eq 'HASH' ? (options => $args{options}) : () ),
     );
 
     return $self;
 
 }
 
-sub _client_start {
-    my ($kernel, $self) = @_[KERNEL, OBJECT];
+sub log {
+    my ($self, $kernel, $level, @args) = @_;
 
-    $self->log($kernel, 'debug', '_client_start()');
-
-    $kernel->alias_set($self->config('Alias'));
-    $kernel->yield('_server_connect');
+    warn sprintf("%-5s - %s\n", uc($level), join(' ', @args));
 
 }
 
-sub _server_connect {
-    my ($kernel, $self) = @_[KERNEL, OBJECT];
+sub handle_reload {
+    my ($self, $kernel, $session) = @_;
 
-    $self->log($kernel, 'debug', '_server_connect()');
-
-    $self->{Listner} = POE::Wheel::SocketFactory->new(
-        RemoteAddress  => $self->config('RemoteAddress') || DEFAULT_HOST,
-        RemotePort     => $self->config('RemotePort') || DEFAULT_PORT,
-        SocketType     => SOCK_STREAM,
-        SocketDomain   => AF_INET,
-        Reuse          => 'no',
-        SocketProtocol => 'tcp',
-        SuccessEvent   => '_server_connected',
-        FailureEvent   => '_server_connection_failed',
-    );
+    $kernel->sig_handled();
 
 }
 
-sub _client_stop {
-    my ($kernel, $self) = @_[KERNEL, OBJECT];
+sub handle_shutdown {
+    my ($self, $kernel, $session) = @_;
 
-    $self->log($kernel, 'debug', '_client_stop()');
+    my $params = {};
+    my $frame = $self->stomp->disconnect($params);
 
-}
-
-sub _client_close {
-    my ($kernel, $self) = @_[KERNEL, OBJECT];
-
-    $self->log($kernel, 'debug', '_client_close()');
-
-    delete $self->{Listner};
-    delete $self->{Wheel};
-    $self->handle_shutdown($kernel);
-    $kernel->alias_remove($self->config('Alias'));
-
-}
-
-sub _server_connected {
-    my ($kernel, $self, $socket, $peeraddr, $peerport, $wheel_id) = 
-       @_[KERNEL, OBJECT, ARG0 .. ARG3];
-
-    my $os = $^O;
-
-    $self->log($kernel, 'debug', '_server_connected()');
-
-    my $wheel = POE::Wheel::ReadWrite->new(
-        Handle => $socket,
-        Filter => POE::Filter::Stomp->new(),
-        InputEvent => '_server_message',
-        ErrorEvent => '_server_error',
-    );
-
-    if ($self->config('EnableKeepAlive')) {
-
-        $self->log($kernel, 'debug', 'keepalive activated');
-
-        # turn keepalive on, this should send a keepalive 
-        # packet once every 2 hours according to the RFC.
-
-        setsockopt($socket, SOL_SOCKET,  SO_KEEPALIVE,  1);
-
-        if (($os eq 'linux') or ($os eq 'aix')) {
-
-            $self->log($kernel, 'debug', 'adjusting keepalive activity');
-
-            # adjust from system defaults, all values are in seconds.
-            # so this does the following:
-            #     every 15 minutes send upto 3 packets at 5 second intervals
-            #         if no reply, the connection is down.
-
-            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPIDLE,  900);  # 15 minutes
-            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPINTVL, 5);    # 
-            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPCNT,   3);    # 
-
-        }
-
-    }
-
-    my $host = gethostbyaddr($peeraddr, AF_INET);
-
-    $self->{attempts} = 0;
-    $self->{Wheel} = $wheel;
-    $self->{Host} = $host;
-    $self->{Port} = $peerport;
-
-    $kernel->yield('handle_connection');
-
-}
-
-sub _server_connection_failed {
-    my ($kernel, $self, $operation, $errnum, $errstr, $wheel_id) = 
-        @_[KERNEL, OBJECT, ARG0 .. ARG3];
-
-    $self->log($kernel, 'debug', '_server_connection_failed()');
-    $self->log($kernel, 'error', "Operation: $operation; Reason: $errnum - $errstr");
-
-    delete $self->{Listner};
-    delete $self->{Wheel};
-
-    foreach my $error (@errors) {
-
-        $self->_reconnect($kernel) if ($errnum == $error);
-
-    }
-
-}
-
-sub _server_error {
-    my ($kernel, $self, $operation, $errnum, $errstr, $wheel_id) = 
-        @_[KERNEL, OBJECT, ARG0 .. ARG3];
-
-    $self->log($kernel, 'debug', '_server_error()');
-    $self->log($kernel, 'error', "Operation: $operation; Reason: $errnum - $errstr");
-
-    delete $self->{Listner};
-    delete $self->{Wheel};
-
-    $kernel->yield('connection_down');
-
-    foreach my $error (@errors) {
-
-        $self->_reconnect($kernel) if ($errnum == $error);
-
-    }
-
-}
-
-sub _server_message {
-    my ($kernel, $self, $frame, $wheel_id) = @_[KERNEL, OBJECT, ARG0, ARG1];
-
-    $self->log($kernel, 'debug' , '_server_message()');
-
-    if ($frame->command eq 'CONNECTED') {
-
-        $self->log($kernel, 'debug' , "received a \"CONNECTED\" message");
-        $kernel->yield('handle_connected', $frame);
-
-    } elsif ($frame->command eq 'MESSAGE') {
-
-        $self->log($kernel, 'debug' , "received a \"MESSAGE\" message");
-        $kernel->yield('handle_message', $frame);
-
-    } elsif ($frame->command eq 'RECEIPT') {
-
-        $self->log($kernel, 'debug' , "received a \"RECEIPT\" message");
-        $kernel->yield('handle_receipt', $frame);
-
-    } elsif ($frame->command eq 'ERROR') {
-
-        $self->log($kernel, 'debug' , "received an \"ERROR\" message");
-        $kernel->yield('handle_error', $frame);
-
-    } else {
-        
-        $self->log($kernel, 'warn', "Unknown message type: $frame->command");
-
-    }
-
-}
-
-sub _reconnect {
-    my ($self, $kernel) = @_;
-
-    my $retry;
-
-    $self->log($kernel, 'debug', "Attempts: $self->{attempts}, Count: $self->{count}");
-
-    if ($self->{attempts} < $self->{count}) {
-
-        my $delay = $reconnections[$self->{attempts}];
-        $self->log($kernel, 'warn', "Attempting reconnection: $self->{attempts}, waiting: $delay seconds");
-        $self->{attempts}++;
-        $kernel->delay('reconnect', $delay);
-
-    } else {
-
-        $retry = $self->config('RetryReconnect') || 0;
-
-        if ($retry) {
-
-            $self->log($kernel, 'warn', 'Cycling reconnection attempts, but not shutting down...');
-            $self->{attempts} = 0;
-            $kernel->yield('reconnect');
-
-        } else {
-
-            $self->log($kernel, 'warn', 'Shutting down, to many reconnection attempts');
-            $kernel->yield('shutdown'); 
-
-        }
-
-    }
+    $kernel->call($session, 'send_data', $frame);
 
 }
 
 # ---------------------------------------------------------------------
-# Public accessors
+# Public Accessors
 # ---------------------------------------------------------------------
 
 sub stomp {
@@ -314,37 +148,10 @@ sub port {
     return $self->{Port};
 
 }
-    
-# ---------------------------------------------------------------------
-# Public methods
-# ---------------------------------------------------------------------
-
-sub send_data {
-    my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
-
-    if (defined($self->{Wheel})) {
-
-        $self->{Wheel}->put($frame);
-
-    }
-
-}
 
 # ---------------------------------------------------------------------
-# Public methods, these should be overridden, as needed
+# Public Events
 # ---------------------------------------------------------------------
-
-sub log {
-    my ($self, $kernel, $level, @args) = @_;
-
-    print "$level: @args\n";
-
-}
-
-sub handle_shutdown {
-    my ($self, $kernel) = @_;
-
-}
 
 sub handle_connection {
     my ($kernel, $self) = @_[KERNEL, OBJECT];
@@ -371,24 +178,304 @@ sub handle_error {
 
 }
 
-sub gather_data {
-    my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
-
-}
-
 sub connection_down {
     my ($kernel, $self) = @_[KERNEL, OBJECT];
 
 }
 
-1;
+sub connection_up {
+    my ($kernel, $self) = @_[KERNEL, OBJECT];
 
+}
+
+sub gather_data {
+    my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
+
+}
+
+sub send_data {
+    my ($kernel, $self, $frame) = @_[KERNEL, OBJECT, ARG0];
+
+    if (defined($self->{Wheel})) {
+
+        $self->{Wheel}->put($frame);
+
+    }
+
+}
+
+# ---------------------------------------------------------------------
+# Private Events
+# ---------------------------------------------------------------------
+
+sub _session_start {
+    my ($kernel, $self) = @_[KERNEL, OBJECT];
+
+    my $alias = $self->config('Alias');
+
+    $self->log($kernel, 'debug', "$alias: _session_start()");
+
+    if ((my $rc = $kernel->alias_set($alias)) > 0) {
+
+        croak 'unable to assign an alias to this session';
+
+    }
+
+    # set up signal handling.
+
+    $kernel->sig(HUP  => 'session_interrupt');
+    $kernel->sig(INT  => 'session_interrupt');
+    $kernel->sig(TERM => 'session_interrupt');
+    $kernel->sig(QUIT => 'session_interrupt');
+
+    $kernel->yield('server_connect');
+
+}
+
+sub _session_stop {
+    my ($kernel, $self) = @_[KERNEL, OBJECT];
+
+    delete $self->{Listner};
+    delete $self->{Wheel};
+
+    $kernel->alias_remove($self->config('Alias'));
+
+}
+
+sub _session_reload {
+    my ($kernel, $self, $session) = @_[KERNEL,OBJECT,SESSION];
+
+    $self->handle_reload($kernel, $session);
+
+}
+
+sub _session_interrupt {
+    my ($kernel, $self, $session, $signal) = @_[KERNEL,OBJECT,SESSION,ARG0];
+
+    my $alias = $self->config('Alias');
+
+    $self->log($kernel, 'debug', "$alias: _session_interrupt()");
+
+    if ($signal eq 'HUP') {
+
+        $self->handle_reload($kernel, $session);
+
+    } else {
+
+        $self->handle_shutdown($kernel, $session);
+
+    }
+
+}
+
+sub _session_shutdown {
+    my ($kernel, $self, $session) = @_[KERNEL, OBJECT, SESSION];
+
+    my $alias = $self->config('Alias');
+
+    $self->log($kernel, 'debug', "$alias: _session_shutdown()");
+
+    $self->handle_shutdown($kernel, $session);
+
+}
+
+sub _server_connect {
+    my ($kernel, $self) = @_[KERNEL, OBJECT];
+
+    my $alias = $self->config('Alias');
+
+    $self->log($kernel, 'debug', "$alias: _server_connect()");
+
+    $self->{Listner} = POE::Wheel::SocketFactory->new(
+        RemoteAddress  => $self->config('RemoteAddress'),
+        RemotePort     => $self->config('RemotePort'),
+        SocketType     => SOCK_STREAM,
+        SocketDomain   => AF_INET,
+        Reuse          => 'no',
+        SocketProtocol => 'tcp',
+        SuccessEvent   => 'server_connected',
+        FailureEvent   => 'server_connection_failed',
+    );
+
+}
+
+sub _server_connected {
+    my ($kernel, $self, $socket, $peeraddr, $peerport, $wheel_id) = 
+       @_[KERNEL, OBJECT, ARG0 .. ARG3];
+
+    my $os = $^O;
+    my $alias = $self->config('Alias');
+    
+    $self->log($kernel, 'debug', "$alias: _server_connected()");
+
+    my $wheel = POE::Wheel::ReadWrite->new(
+        Handle => $socket,
+        Filter => POE::Filter::Stomp->new(),
+        InputEvent => 'server_message',
+        ErrorEvent => 'server_error',
+    );
+
+    if ($self->config('EnableKeepAlive')) {
+
+        $self->log($kernel, 'debug', "$alias: keepalive activated");
+
+        # turn keepalive on, this should send a keepalive 
+        # packet once every 2 hours according to the RFC.
+
+        setsockopt($socket, SOL_SOCKET,  SO_KEEPALIVE,  1);
+
+        if (($os eq 'linux') or ($os eq 'aix')) {
+
+            $self->log($kernel, 'debug', "$alias: adjusting keepalive activity");
+
+            # adjust from system defaults, all values are in seconds.
+            # so this does the following:
+            #     every 15 minutes send upto 3 packets at 5 second intervals
+            #         if no reply, the connection is down.
+
+            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPIDLE,  900);  # 15 minutes
+            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPINTVL, 5);    # 
+            setsockopt($socket, IPPROTO_TCP, $TCP_KEEPCNT,   3);    # 
+
+        }
+
+    }
+
+    my $host = gethostbyaddr($peeraddr, AF_INET);
+
+    $self->{attempts} = 0;
+    $self->{Wheel} = $wheel;
+    $self->{Host} = $host;
+    $self->{Port} = $peerport;
+
+    $kernel->yield('handle_connection');
+
+}
+
+sub _server_connection_failed {
+    my ($kernel, $self, $operation, $errnum, $errstr, $wheel_id) = 
+        @_[KERNEL, OBJECT, ARG0 .. ARG3];
+
+    my $alias = $self->config('Alias');
+
+    $self->log($kernel, 'debug', "$alias: _server_connection_failed()");
+    $self->log($kernel, 'error', "$alias: operation: $operation; reason: $errnum - $errstr");
+
+    delete $self->{Listner};
+    delete $self->{Wheel};
+
+    foreach my $error (@errors) {
+
+        $self->_reconnect($kernel) if ($errnum == $error);
+
+    }
+
+}
+
+sub _server_error {
+    my ($kernel, $self, $operation, $errnum, $errstr, $wheel_id) = 
+        @_[KERNEL, OBJECT, ARG0 .. ARG3];
+
+    my $alias = $self->config('Alias');
+
+    $self->log($kernel, 'debug', "$alias: _server_error()");
+    $self->log($kernel, 'error', "$alias: operation: $operation; reason: $errnum - $errstr");
+
+    delete $self->{Listner};
+    delete $self->{Wheel};
+
+    $kernel->yield('connection_down');
+
+    foreach my $error (@errors) {
+
+        $self->_reconnect($kernel) if ($errnum == $error);
+
+    }
+
+}
+
+sub _server_message {
+    my ($kernel, $self, $frame, $wheel_id) = @_[KERNEL, OBJECT, ARG0, ARG1];
+
+    my $alias = $self->config('Alias');
+
+    $self->log($kernel, 'debug' , "$alias: _server_message()");
+
+    if ($frame->command eq 'CONNECTED') {
+
+        $self->log($kernel, 'debug' , "$alias: received a \"CONNECTED\" message");
+        $kernel->yield('handle_connected', $frame);
+
+    } elsif ($frame->command eq 'MESSAGE') {
+
+        $self->log($kernel, 'debug' , "$alias: received a \"MESSAGE\" message");
+        $kernel->yield('handle_message', $frame);
+
+    } elsif ($frame->command eq 'RECEIPT') {
+
+        $self->log($kernel, 'debug' , "$alias: received a \"RECEIPT\" message");
+        $kernel->yield('handle_receipt', $frame);
+
+    } elsif ($frame->command eq 'ERROR') {
+
+        $self->log($kernel, 'debug' , "$alias: received an \"ERROR\" message");
+        $kernel->yield('handle_error', $frame);
+
+    } else {
+
+        $self->log($kernel, 'warn', "$alias: unknown message type: $frame->command");
+
+    }
+
+}
+
+# ---------------------------------------------------------------------
+# Private Methods
+# ---------------------------------------------------------------------
+
+sub _reconnect {
+    my ($self, $kernel) = @_;
+
+    my $retry;
+    my $alias = $self->config('Alias');
+
+    $self->log($kernel, 'debug', "$alias: attempts: $self->{attempts}, count: $self->{count}");
+
+    if ($self->{attempts} < $self->{count}) {
+
+        my $delay = $reconnections[$self->{attempts}];
+        $self->log($kernel, 'warn', "$alias: attempting reconnection: $self->{attempts}, waiting: $delay seconds");
+        $self->{attempts}++;
+        $kernel->delay('server_reconnect', $delay);
+
+    } else {
+
+        $retry = $self->config('RetryReconnect') || 0;
+
+        if ($retry) {
+
+            $self->log($kernel, 'warn', "$alias: cycling reconnection attempts, but not shutting down...");
+            $self->{attempts} = 0;
+            $kernel->yield('server_reconnect');
+
+        } else {
+
+            $self->log($kernel, 'warn', "$alias: shutting down, to many reconnection attempts");
+            $kernel->yield('shutdown'); 
+
+        }
+
+    }
+
+}
+
+1;
 
 __END__
 
 =head1 NAME
 
-POE::Component::Client::Stomp - Perl extension for the POE Environment
+POE::Component::Client::Stomp - A Perl extension for the POE Environment
 
 =head1 SYNOPSIS
 
@@ -641,6 +728,26 @@ whatever it is currently doing.
 
 =back
 
+=item connection_up
+
+This event and corresponding method is a hook to allow you to be notified 
+when the connection to the server up. By default it does nothing. 
+But it would be usefull to notify "gather_data" to start doing 
+whatever it supposed to do.
+
+=over 4
+
+=item Example
+
+ sub connection_up {
+    my ($kernel, $self) = @_[KERNEL,OBJECT];
+
+    # do something here
+
+ }
+
+=back
+
 =item log
 
 This method is used internally to send a log message to stdout. It can be 
@@ -671,16 +778,34 @@ uses the following levels internally: 'warn', 'error', 'debug'
 =item handle_shutdown
 
 This method is a hook and should be overidden to do "shutdown" stuff. By
-default it does nothing.
+default it sends a "DISCONNECT" message to the message queue server.
 
 =over 4
 
 =item Example
 
  sub handle_shutdown {
-    my ($self, $kernel) = @_;
+    my ($self, $kernel, $session) = @_;
 
     # do something here
+
+ }
+
+=back
+
+=item handle_reload
+
+This method is a hook and should be overidden to do "reload" stuff. By
+default it executes POE's sig_handled() method.
+
+=over 4
+
+=item Example
+
+ sub handle_reload {
+    my ($self, $kernel, $session) = @_;
+
+    $kernel->sig_handled();
 
  }
 

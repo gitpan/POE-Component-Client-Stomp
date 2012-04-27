@@ -7,6 +7,8 @@
 # Simple test program to test POE interaction.
 #
 
+use lib '../lib';
+
 package Client;
 
 use POE;
@@ -38,8 +40,8 @@ sub handle_connection {
     my $buffer = sprintf("Connected to %s on %s", $self->host, $self->port);
 
     $self->log($kernel, 'info', $buffer);
-    $frame = $self->stomp->connect({login => 'testing', 
-                                    passcode => 'testing'});
+    $frame = $self->stomp->connect({login => 'guest', 
+                                    passcode => 'guest'});
     $kernel->yield('send_data' => $frame);
 
 }
@@ -69,29 +71,21 @@ sub log {
 
     if ($level eq 'error') {
 
-        print "Error: @args\n";
+        print "ERROR - @args\n";
 
     } elsif ($level eq 'warn') {
 
-        print "Warn : @args\n";
+        print "WARN  - @args\n";
 
     } elsif ($level eq 'debug') {
 
-        print "Debug: @args\n" if $self->config('Debug');
+        print "DEBUG - @args\n" if $self->config('Debug');
 
     } else {
 
-        print "Info : @args\n";
+        print "INFO  - @args\n";
 
     }
-
-}
-
-sub handle_shutdown {
-    my ($self, $kernel) = @_;
-
-    $kernel->alarm_remove($self->{alarm_id});
-    print "Shutting down\n";
 
 }
 
@@ -188,6 +182,8 @@ main: {
 
     $poe_kernel->state('got_signal', \&handle_signals);
     $poe_kernel->sig(INT => 'got_signal');
+    $poe_kernel->sig(TERM => 'got_signal');
+    $poe_kernel->sig(QUIT => 'got_signal');
 
     $poe_kernel->run();
 

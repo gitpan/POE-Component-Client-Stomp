@@ -73,6 +73,15 @@ Revision history for Perl extension POE::Component::Client::Stomp.
       Also added code to set the socket for reasonable levels of 
         keepalive packet generation. Unfortunately the constants; 
         TCP_KEEPCNT, TCP_KEEPIDLE and TCP_KEEPINTVL have different values 
-        depending on the OS being used. As such, the this feature only 
+        depending on the OS being used. As such, this feature only 
         works on Linux and AIX. 
+
+0.12  22-Mar-2012 K.Esteb
+      Improved signal handling.
+      Renamed some of the private events to better conform to other
+        systems.
+      Added a handle_reload() method to repond to HUP signals.
+      The signals INT, TERM and QUIT will now execute the
+        handle_shutdown() method.
+      Added a connection_up event.
 

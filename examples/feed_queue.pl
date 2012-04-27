@@ -7,6 +7,8 @@
 # send a message to the queue 'foo'
 #
 
+use lib '../lib';
+
 use Net::Stomp;
 use Getopt::Long;
 
@@ -84,7 +86,7 @@ main: {
     setup();
 
     $stomp = Net::Stomp->new({ hostname => $hostname, port => $port });
-    $stomp->connect( { login => 'testing', passcode => 'testing' } );
+    $stomp->connect( { login => 'guest', passcode => 'guest' } );
 
     for (my $x = 0; $x < $count; $x++) {
 

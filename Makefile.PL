@@ -9,6 +9,7 @@ WriteMakefile(
 	                      Net::Stomp => 0,
                           POE::Filter::Stomp => 0.02, 
                           POE::Component::Client::Stomp::Utils => 0}, 
+    LICENSE           => 'perl',
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/POE/Component/Client/Stomp.pm', # retrieve abstract from module
        AUTHOR         => 'Kevin L. Esteb <kesteb@wsipc.org>') : ()),
